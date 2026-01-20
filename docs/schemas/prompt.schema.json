@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/prompt.schema.json",
+  "title": "CheatsheetPrompt",
+  "description": "Input bundle for model generation per command; all examples must be sanitized before inclusion.",
+  "type": "object",
+  "required": [
+    "version",
+    "command",
+    "entry_schema_version",
+    "patterns",
+    "examples",
+    "generator"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "string" },
+    "entry_schema_version": { "type": "string" },
+    "command": { "type": "string" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "generator": {
+      "type": "object",
+      "required": ["reason"],
+      "additionalProperties": false,
+      "properties": {
+        "reason": { "type": "string", "enum": ["new_command", "new_pattern", "manual"] },
+        "notes": { "type": "string" }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "total_uses": { "type": "integer", "minimum": 0 },
+        "unique_patterns": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "patterns": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/pattern" }
+    },
+    "examples": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/example" }
+    }
+  },
+  "definitions": {
+    "pattern": {
+      "type": "object",
+      "required": ["signature", "frequency"],
+      "additionalProperties": false,
+      "properties": {
+        "signature": { "type": "string", "description": "Stable hash for this normalized pattern." },
+        "subcommand": { "type": "string" },
+        "flags": { "type": "array", "items": { "type": "string" } },
+        "options": { "type": "object", "additionalProperties": { "type": "string" } },
+        "arg_shapes": { "type": "array", "items": { "type": "string" } },
+        "frequency": { "type": "integer", "minimum": 0 },
+        "representative_example": { "type": "string" },
+        "first_seen": { "type": "string", "format": "date-time" },
+        "last_seen": { "type": "string", "format": "date-time" }
+      }
+    },
+    "example": {
+      "type": "object",
+      "required": ["pattern_signature", "command_line"],
+      "additionalProperties": false,
+      "properties": {
+        "pattern_signature": { "type": "string" },
+        "command_line": { "type": "string" },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": { "type": "string" },
+            "shell": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" }
+          }
+        }
+      }
+    }
+  }
+}

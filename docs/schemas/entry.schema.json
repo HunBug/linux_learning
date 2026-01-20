@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/entry.schema.json",
+  "title": "CheatsheetEntry",
+  "description": "Structured cheatsheet output per command, produced by the generator.",
+  "type": "object",
+  "required": [
+    "version",
+    "command",
+    "summary",
+    "syntax_patterns",
+    "flags_and_options",
+    "examples",
+    "regenerated_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "string" },
+    "command": { "type": "string" },
+    "summary": { "type": "string" },
+    "when_i_use_it": { "type": "array", "items": { "type": "string" } },
+    "syntax_patterns": { "type": "array", "items": { "type": "string" } },
+    "flags_and_options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "example": { "type": "string" }
+        }
+      }
+    },
+    "subcommands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "summary", "syntax_patterns", "flags_and_options"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "summary": { "type": "string" },
+          "syntax_patterns": { "type": "array", "items": { "type": "string" } },
+          "flags_and_options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "description"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "description": { "type": "string" },
+                "example": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "examples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["command"],
+        "additionalProperties": false,
+        "properties": {
+          "command": { "type": "string" },
+          "why": { "type": "string" }
+        }
+      }
+    },
+    "pitfalls": { "type": "array", "items": { "type": "string" } },
+    "related_commands": { "type": "array", "items": { "type": "string" } },
+    "regenerated_at": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "patterns_hash": { "type": "string" },
+        "input_hash": { "type": "string" },
+        "run_id": { "type": "string" }
+      }
+    }
+  }
+}
