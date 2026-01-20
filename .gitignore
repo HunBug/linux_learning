@@ -48,6 +48,19 @@ nunit-*.xml
 # Local environment
 .env
 .env.*
+
+# Project data (contains personal history and generated artifacts)
+raw/
+data/
+snapshots/
+prompts/
+cheatsheets/
+output/
+patterns.json
+state.json
+regen_plan.json
+*.prompt.json
+*.entry.json
 .cursorindexingignore
 
 # Marimo

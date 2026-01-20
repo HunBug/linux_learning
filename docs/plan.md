@@ -38,3 +38,10 @@
 - Build aggregation + diff pipeline in the new CLI (skeleton in place).
 - Wire prompt generation and schema validation against `docs/schemas/prompt.schema.json` and `docs/schemas/entry.schema.json`.
 - Add sample history files + sanitized fixtures for tests once pipeline exists.
+
+## Near-term enhancements
+- Limit cap for generation prep: CLI flags to cap prompts/entries by frequency and/or recent changes (e.g., `--top-commands 50`, `--top-patterns-per-command 10`). Apply caps during `diff`/`prepare` to avoid large prompt batches.
+- Reporting outputs (human-readable): add `report` subcommand (or `--report` on `aggregate`) to emit summaries (top commands, top flags/options, pattern counts) as text/Markdown in `output/report.txt` and stdout.
+- Web prompt export: add a subcommand (e.g., `prompt-export`) that writes copy/paste-ready prompts for ChatGPT web, including response-format instructions aligned to `entry.schema.json` so responses can be merged back.
+- Codex dry-run: add `--generator dry-run` to `generate`/`run` to skip invoking any model but still produce placeholder entries and state updates; preserve `--generator none` as today.
+- Command normalization and noise filtering: normalize commands with paths to basenames (e.g., `/opt/miniconda3/bin/conda` -> `conda`) and drop commands containing control chars or excessive length to avoid bad filenames and noise.
