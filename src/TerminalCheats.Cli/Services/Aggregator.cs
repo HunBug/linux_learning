@@ -125,14 +125,17 @@ public sealed class Aggregator
 
         foreach (var evt in events)
         {
-            if (!snapshot.Commands.TryGetValue(evt.Command, out var command))
+            var commandName = NameUtil.NormalizeCommandName(evt.Command);
+            if (commandName is null) continue;
+
+            if (!snapshot.Commands.TryGetValue(commandName, out var command))
             {
-                command = new CommandPatterns { Command = evt.Command };
-                snapshot.Commands[evt.Command] = command;
+                command = new CommandPatterns { Command = commandName };
+                snapshot.Commands[commandName] = command;
             }
 
             command.TotalUses++;
-            var signature = BuildSignature(evt);
+            var signature = BuildSignature(commandName, evt);
             var existing = command.Patterns.FirstOrDefault(p => p.Signature == signature.Signature);
             if (existing == null)
             {
@@ -149,7 +152,7 @@ public sealed class Aggregator
         return snapshot;
     }
 
-    private PatternSignature BuildSignature(CommandEvent evt)
+    private PatternSignature BuildSignature(string commandName, CommandEvent evt)
     {
         var flags = evt.Flags.OrderBy(f => f, StringComparer.Ordinal).ToList();
         var options = evt.Options
@@ -159,7 +162,7 @@ public sealed class Aggregator
 
         var canonical = new
         {
-            command = evt.Command,
+            command = commandName,
             subcommand = evt.Subcommand,
             flags,
             options,

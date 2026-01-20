@@ -12,15 +12,17 @@ public sealed class EntryWriter
         _fs = fs;
     }
 
-    public async Task WritePlaceholderAsync(PatternsSnapshot patterns, RegenPlan plan, CancellationToken ct = default)
+    public async Task WritePlaceholderAsync(PatternsSnapshot patterns, RegenPlan plan, int? topPatternsPerCommand = null, string generatorMode = "none", CancellationToken ct = default)
     {
+        _fs.EnsureBaseFolders();
         foreach (var item in plan.Commands)
         {
             try
             {
                 if (!patterns.Commands.TryGetValue(item.Command, out var commandPatterns)) continue;
-                var entry = BuildPlaceholderEntry(commandPatterns, item.PatternsHash);
-                var path = Path.Combine(_fs.EntriesDir, $"{item.Command}.json");
+                var entry = BuildPlaceholderEntry(commandPatterns, item.PatternsHash, topPatternsPerCommand, generatorMode);
+                var fileName = NameUtil.ToSafeFileName(item.Command) + ".json";
+                var path = Path.Combine(_fs.EntriesDir, fileName);
                 await JsonUtil.WriteAsync(path, entry, ct);
             }
             catch (Exception ex)
@@ -30,10 +32,11 @@ public sealed class EntryWriter
         }
     }
 
-    public static object BuildPlaceholderEntry(CommandPatterns commandPatterns, string patternsHash)
+    public static object BuildPlaceholderEntry(CommandPatterns commandPatterns, string patternsHash, int? topPatternsPerCommand, string generatorMode)
     {
         var syntaxPatterns = commandPatterns.Patterns
             .OrderByDescending(p => p.Frequency)
+            .Take(topPatternsPerCommand ?? int.MaxValue)
             .Select(p => BuildSyntaxPattern(p))
             .ToList();
 
@@ -64,7 +67,7 @@ public sealed class EntryWriter
         {
             version = "0.1",
             command = commandPatterns.Command,
-            summary = "Placeholder entry generated locally (generator none).",
+            summary = $"Placeholder entry generated locally (generator {generatorMode}).",
             when_i_use_it = Array.Empty<string>(),
             syntax_patterns = syntaxPatterns,
             flags_and_options = flagsAndOptions,

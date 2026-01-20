@@ -12,7 +12,7 @@ public sealed class DiffService
         _fs = fs;
     }
 
-    public async Task<RegenPlan> RunAsync(CancellationToken ct = default)
+    public async Task<RegenPlan> RunAsync(int? maxCommands = null, CancellationToken ct = default)
     {
         var patterns = await JsonUtil.ReadAsync<PatternsSnapshot>(_fs.PatternsPath, ct)
                        ?? throw new InvalidOperationException("patterns.json not found; run aggregate first.");
@@ -25,7 +25,11 @@ public sealed class DiffService
             GeneratedAt = DateTimeOffset.UtcNow
         };
 
-        foreach (var kvp in patterns.Commands)
+        var ordered = patterns.Commands
+            .OrderByDescending(kvp => kvp.Value.TotalUses)
+            .Take(maxCommands ?? int.MaxValue);
+
+        foreach (var kvp in ordered)
         {
             var command = kvp.Key;
             var hash = ComputePatternsHash(kvp.Value);

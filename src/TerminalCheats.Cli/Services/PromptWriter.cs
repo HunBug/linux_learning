@@ -12,7 +12,7 @@ public sealed class PromptWriter
         _fs = fs;
     }
 
-    public async Task WriteAsync(PatternsSnapshot patterns, RegenPlan plan, CancellationToken ct = default)
+    public async Task WriteAsync(PatternsSnapshot patterns, RegenPlan plan, int? topPatternsPerCommand = null, CancellationToken ct = default)
     {
         _fs.EnsureBaseFolders();
         foreach (var item in plan.Commands)
@@ -20,8 +20,9 @@ public sealed class PromptWriter
             try
             {
                 if (!patterns.Commands.TryGetValue(item.Command, out var commandPatterns)) continue;
-                var prompt = BuildPrompt(commandPatterns, item);
-                var path = Path.Combine(_fs.PromptsDir, $"{item.Command}.prompt.json");
+                var prompt = BuildPrompt(commandPatterns, item, topPatternsPerCommand);
+                var fileName = NameUtil.ToSafeFileName(item.Command) + ".prompt.json";
+                var path = Path.Combine(_fs.PromptsDir, fileName);
                 await JsonUtil.WriteAsync(path, prompt, ct);
             }
             catch (Exception ex)
@@ -31,10 +32,11 @@ public sealed class PromptWriter
         }
     }
 
-    private static object BuildPrompt(CommandPatterns commandPatterns, RegenItem item)
+    private static object BuildPrompt(CommandPatterns commandPatterns, RegenItem item, int? topPatternsPerCommand)
     {
         var patterns = commandPatterns.Patterns
             .OrderByDescending(p => p.Frequency)
+            .Take(topPatternsPerCommand ?? int.MaxValue)
             .Select(p => new
             {
                 signature = p.Signature,

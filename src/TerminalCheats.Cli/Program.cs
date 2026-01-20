@@ -1,3 +1,5 @@
+using System.IO;
+using System.Linq;
 using TerminalCheats.Cli.Models;
 using TerminalCheats.Cli.Services;
 
@@ -13,6 +15,8 @@ internal static class Program
             ["diff"] = RunDiff,
             ["prepare"] = RunPrepare,
             ["generate"] = RunGenerate,
+            ["report"] = RunReport,
+            ["prompt-export"] = RunPromptExport,
             ["render"] = RunRender,
             ["run"] = RunAll
         };
@@ -55,9 +59,13 @@ internal static class Program
         Console.WriteLine("  diff        Compare current patterns to state and plan regeneration");
         Console.WriteLine("  prepare     Write per-command JSON prompts for generation");
         Console.WriteLine("  generate    Run generator (or skip with --generator none) and write entries");
+        Console.WriteLine("  report      Emit human-readable summary to stdout and output/report.txt");
+        Console.WriteLine("  prompt-export Export web-ready prompts to output/prompts_web/");
         Console.WriteLine("  render      Build renderer inputs (Markdown later)");
         Console.WriteLine("  run         End-to-end aggregate -> diff -> prepare -> generate -> render");
         Console.WriteLine("Global options: --root <path> (defaults to cwd)");
+        Console.WriteLine("Caps: --top-commands <n>, --top-patterns-per-command <n>");
+        Console.WriteLine("Report options: --top-flags <n>, --top-options <n>");
     }
 
     private static FileSystemLayout BuildLayout(Dictionary<string, string> options)
@@ -89,7 +97,8 @@ internal static class Program
         var (options, _) = OptionParser.Parse(args);
         var fs = BuildLayout(options);
         var diff = new DiffService(fs);
-        var plan = await diff.RunAsync();
+        var maxCommands = ParseOptionalInt(options, "--top-commands");
+        var plan = await diff.RunAsync(maxCommands);
         if (plan.Commands.Count == 0)
         {
             Console.WriteLine("diff: no changes detected");
@@ -113,7 +122,8 @@ internal static class Program
         var plan = await JsonUtil.ReadAsync<RegenPlan>(fs.RegenPlanPath)
                    ?? throw new InvalidOperationException("regen_plan.json not found; run diff first.");
         var writer = new PromptWriter(fs);
-        await writer.WriteAsync(patterns, plan);
+        var topPatterns = ParseOptionalInt(options, "--top-patterns-per-command");
+        await writer.WriteAsync(patterns, plan, topPatterns);
         Console.WriteLine($"prepare: wrote {plan.Commands.Count} prompt(s)");
         return 0;
     }
@@ -128,14 +138,21 @@ internal static class Program
                    ?? throw new InvalidOperationException("regen_plan.json not found; run diff first.");
 
         var generator = options.TryGetValue("--generator", out var gen) ? gen : "none";
-        if (!string.Equals(generator, "none", StringComparison.OrdinalIgnoreCase))
+        var skipExternal = string.Equals(generator, "none", StringComparison.OrdinalIgnoreCase)
+                           || string.Equals(generator, "dry-run", StringComparison.OrdinalIgnoreCase);
+        if (!skipExternal)
         {
-            Console.WriteLine("generate: external generator not wired; use --generator none");
+            Console.WriteLine("generate: external generator not wired; use --generator none or --generator dry-run");
             return 1;
+        }
+        if (string.Equals(generator, "dry-run", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("generate: dry-run (writing placeholders only)");
         }
 
         var entries = new EntryWriter(fs);
-        await entries.WritePlaceholderAsync(patterns, plan);
+        var topPatterns = ParseOptionalInt(options, "--top-patterns-per-command");
+        await entries.WritePlaceholderAsync(patterns, plan, topPatterns, generator);
         var state = new StateUpdater(fs);
         await state.UpdateAsync(patterns, plan);
         Console.WriteLine($"generate: wrote {plan.Commands.Count} placeholder entrie(s) and updated state");
@@ -148,6 +165,55 @@ internal static class Program
         return 0;
     }
 
+    private static async Task<int> RunReport(string[] args)
+    {
+        var (options, _) = OptionParser.Parse(args);
+        var fs = BuildLayout(options);
+        var patterns = await JsonUtil.ReadAsync<PatternsSnapshot>(fs.PatternsPath)
+                       ?? throw new InvalidOperationException("patterns.json not found; run aggregate first.");
+
+        var writer = new ReportWriter(fs);
+        var topCommands = ParseOptionalInt(options, "--top-commands");
+        var topFlags = ParseOptionalInt(options, "--top-flags");
+        var topOptions = ParseOptionalInt(options, "--top-options");
+        var report = await writer.WriteAsync(patterns, topCommands, topFlags, topOptions);
+        Console.WriteLine(report);
+        Console.WriteLine($"report: wrote {Path.Combine(fs.OutputDir, "report.txt")}");
+        return 0;
+    }
+
+    private static async Task<int> RunPromptExport(string[] args)
+    {
+        var (options, _) = OptionParser.Parse(args);
+        var fs = BuildLayout(options);
+        var patterns = await JsonUtil.ReadAsync<PatternsSnapshot>(fs.PatternsPath)
+                       ?? throw new InvalidOperationException("patterns.json not found; run aggregate first.");
+        var plan = await JsonUtil.ReadAsync<RegenPlan>(fs.RegenPlanPath)
+                   ?? throw new InvalidOperationException("regen_plan.json not found; run diff first.");
+
+        var topPatterns = ParseOptionalInt(options, "--top-patterns-per-command");
+        var maxCommands = ParseOptionalInt(options, "--top-commands");
+        var filteredPlan = plan;
+        if (maxCommands.HasValue)
+        {
+            filteredPlan = new RegenPlan
+            {
+                Version = plan.Version,
+                GeneratedAt = plan.GeneratedAt,
+                Commands = plan.Commands
+                    .OrderByDescending(c => patterns.Commands.TryGetValue(c.Command, out var cp) ? cp.TotalUses : 0)
+                    .ThenBy(c => c.Command, StringComparer.Ordinal)
+                    .Take(maxCommands.Value)
+                    .ToList()
+            };
+        }
+
+        var exporter = new PromptExportWriter(fs);
+        await exporter.WriteAsync(patterns, filteredPlan, topPatterns);
+        Console.WriteLine($"prompt-export: wrote {filteredPlan.Commands.Count} web prompt(s) to {Path.Combine(fs.OutputDir, "prompts_web")}");
+        return 0;
+    }
+
     private static async Task<int> RunAll(string[] args)
     {
         var (options, _) = OptionParser.Parse(args);
@@ -157,24 +223,42 @@ internal static class Program
         var patterns = await aggregator.RunAsync();
 
         var diff = new DiffService(fs);
-        var plan = await diff.RunAsync();
+        var maxCommands = ParseOptionalInt(options, "--top-commands");
+        var plan = await diff.RunAsync(maxCommands);
 
         var writer = new PromptWriter(fs);
-        await writer.WriteAsync(patterns, plan);
+        var topPatterns = ParseOptionalInt(options, "--top-patterns-per-command");
+        await writer.WriteAsync(patterns, plan, topPatterns);
 
         var generator = options.TryGetValue("--generator", out var gen) ? gen : "none";
-        if (!string.Equals(generator, "none", StringComparison.OrdinalIgnoreCase))
+        var skipExternal = string.Equals(generator, "none", StringComparison.OrdinalIgnoreCase)
+                           || string.Equals(generator, "dry-run", StringComparison.OrdinalIgnoreCase);
+        if (!skipExternal)
         {
-            Console.WriteLine("run: external generator not wired; use --generator none");
+            Console.WriteLine("run: external generator not wired; use --generator none or --generator dry-run");
             return 1;
+        }
+        if (string.Equals(generator, "dry-run", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("run: dry-run (writing placeholders only)");
         }
 
         var entries = new EntryWriter(fs);
-        await entries.WritePlaceholderAsync(patterns, plan);
+        await entries.WritePlaceholderAsync(patterns, plan, topPatterns, generator);
         var state = new StateUpdater(fs);
         await state.UpdateAsync(patterns, plan);
 
         Console.WriteLine("run: completed aggregate -> diff -> prepare -> generate (placeholder)");
         return 0;
+    }
+
+    private static int? ParseOptionalInt(Dictionary<string, string> options, string key)
+    {
+        if (options.TryGetValue(key, out var value) && int.TryParse(value, out var parsed) && parsed > 0)
+        {
+            return parsed;
+        }
+
+        return null;
     }
 }
