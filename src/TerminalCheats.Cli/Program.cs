@@ -96,9 +96,11 @@ internal static class Program
     {
         var (options, _) = OptionParser.Parse(args);
         var fs = BuildLayout(options);
+        var (patterns, filteredNote) = await LoadFilteredPatterns(fs, options);
         var diff = new DiffService(fs);
         var maxCommands = ParseOptionalInt(options, "--top-commands");
-        var plan = await diff.RunAsync(maxCommands);
+        var plan = await diff.RunAsync(patterns, maxCommands);
+        if (filteredNote is not null) Console.WriteLine(filteredNote);
         if (plan.Commands.Count == 0)
         {
             Console.WriteLine("diff: no changes detected");
@@ -117,13 +119,13 @@ internal static class Program
     {
         var (options, _) = OptionParser.Parse(args);
         var fs = BuildLayout(options);
-        var patterns = await JsonUtil.ReadAsync<PatternsSnapshot>(fs.PatternsPath)
-                       ?? throw new InvalidOperationException("patterns.json not found; run aggregate first.");
+        var (patterns, filteredNote) = await LoadFilteredPatterns(fs, options);
         var plan = await JsonUtil.ReadAsync<RegenPlan>(fs.RegenPlanPath)
                    ?? throw new InvalidOperationException("regen_plan.json not found; run diff first.");
         var writer = new PromptWriter(fs);
         var topPatterns = ParseOptionalInt(options, "--top-patterns-per-command");
         await writer.WriteAsync(patterns, plan, topPatterns);
+        if (filteredNote is not null) Console.WriteLine(filteredNote);
         Console.WriteLine($"prepare: wrote {plan.Commands.Count} prompt(s)");
         return 0;
     }
@@ -132,8 +134,7 @@ internal static class Program
     {
         var (options, _) = OptionParser.Parse(args);
         var fs = BuildLayout(options);
-        var patterns = await JsonUtil.ReadAsync<PatternsSnapshot>(fs.PatternsPath)
-                       ?? throw new InvalidOperationException("patterns.json not found; run aggregate first.");
+        var (patterns, filteredNote) = await LoadFilteredPatterns(fs, options);
         var plan = await JsonUtil.ReadAsync<RegenPlan>(fs.RegenPlanPath)
                    ?? throw new InvalidOperationException("regen_plan.json not found; run diff first.");
 
@@ -155,6 +156,7 @@ internal static class Program
         await entries.WritePlaceholderAsync(patterns, plan, topPatterns, generator);
         var state = new StateUpdater(fs);
         await state.UpdateAsync(patterns, plan);
+        if (filteredNote is not null) Console.WriteLine(filteredNote);
         Console.WriteLine($"generate: wrote {plan.Commands.Count} placeholder entrie(s) and updated state");
         return 0;
     }
@@ -169,8 +171,7 @@ internal static class Program
     {
         var (options, _) = OptionParser.Parse(args);
         var fs = BuildLayout(options);
-        var patterns = await JsonUtil.ReadAsync<PatternsSnapshot>(fs.PatternsPath)
-                       ?? throw new InvalidOperationException("patterns.json not found; run aggregate first.");
+        var (patterns, filteredNote) = await LoadFilteredPatterns(fs, options);
 
         var writer = new ReportWriter(fs);
         var topCommands = ParseOptionalInt(options, "--top-commands");
@@ -179,6 +180,7 @@ internal static class Program
         var report = await writer.WriteAsync(patterns, topCommands, topFlags, topOptions);
         Console.WriteLine(report);
         Console.WriteLine($"report: wrote {Path.Combine(fs.OutputDir, "report.txt")}");
+        if (filteredNote is not null) Console.WriteLine(filteredNote);
         return 0;
     }
 
@@ -186,8 +188,7 @@ internal static class Program
     {
         var (options, _) = OptionParser.Parse(args);
         var fs = BuildLayout(options);
-        var patterns = await JsonUtil.ReadAsync<PatternsSnapshot>(fs.PatternsPath)
-                       ?? throw new InvalidOperationException("patterns.json not found; run aggregate first.");
+        var (patterns, filteredNote) = await LoadFilteredPatterns(fs, options);
         var plan = await JsonUtil.ReadAsync<RegenPlan>(fs.RegenPlanPath)
                    ?? throw new InvalidOperationException("regen_plan.json not found; run diff first.");
 
@@ -211,6 +212,7 @@ internal static class Program
         var exporter = new PromptExportWriter(fs);
         await exporter.WriteAsync(patterns, filteredPlan, topPatterns);
         Console.WriteLine($"prompt-export: wrote {filteredPlan.Commands.Count} web prompt(s) to {Path.Combine(fs.OutputDir, "prompts_web")}");
+        if (filteredNote is not null) Console.WriteLine(filteredNote);
         return 0;
     }
 
@@ -220,11 +222,12 @@ internal static class Program
         var fs = BuildLayout(options);
 
         var aggregator = new Aggregator(fs);
-        var patterns = await aggregator.RunAsync();
+        var rawPatterns = await aggregator.RunAsync();
+        var (patterns, filteredNote) = await ApplyFilters(fs, options, rawPatterns);
 
         var diff = new DiffService(fs);
         var maxCommands = ParseOptionalInt(options, "--top-commands");
-        var plan = await diff.RunAsync(maxCommands);
+        var plan = await diff.RunAsync(patterns, maxCommands);
 
         var writer = new PromptWriter(fs);
         var topPatterns = ParseOptionalInt(options, "--top-patterns-per-command");
@@ -247,9 +250,29 @@ internal static class Program
         await entries.WritePlaceholderAsync(patterns, plan, topPatterns, generator);
         var state = new StateUpdater(fs);
         await state.UpdateAsync(patterns, plan);
+        if (filteredNote is not null) Console.WriteLine(filteredNote);
 
         Console.WriteLine("run: completed aggregate -> diff -> prepare -> generate (placeholder)");
         return 0;
+    }
+
+    private static async Task<(PatternsSnapshot snapshot, string? note)> LoadFilteredPatterns(FileSystemLayout fs, Dictionary<string, string> options)
+    {
+        var patterns = await JsonUtil.ReadAsync<PatternsSnapshot>(fs.PatternsPath)
+                       ?? throw new InvalidOperationException("patterns.json not found; run aggregate first.");
+        return await ApplyFilters(fs, options, patterns);
+    }
+
+    private static async Task<(PatternsSnapshot snapshot, string? note)> ApplyFilters(FileSystemLayout fs, Dictionary<string, string> options, PatternsSnapshot patterns)
+    {
+        var configLoader = new ConfigLoader(fs);
+        var config = await configLoader.LoadAsync();
+        var filter = new PatternFilter();
+        var result = filter.Apply(patterns, config);
+        var note = result.CommandsFiltered > 0
+            ? $"filters: skipped {result.CommandsFiltered} command(s) ({result.UsesFiltered} uses) via config.json"
+            : null;
+        return (result.Snapshot, note);
     }
 
     private static int? ParseOptionalInt(Dictionary<string, string> options, string key)

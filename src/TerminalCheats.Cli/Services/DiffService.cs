@@ -12,10 +12,8 @@ public sealed class DiffService
         _fs = fs;
     }
 
-    public async Task<RegenPlan> RunAsync(int? maxCommands = null, CancellationToken ct = default)
+    public async Task<RegenPlan> RunAsync(PatternsSnapshot patterns, int? maxCommands = null, CancellationToken ct = default)
     {
-        var patterns = await JsonUtil.ReadAsync<PatternsSnapshot>(_fs.PatternsPath, ct)
-                       ?? throw new InvalidOperationException("patterns.json not found; run aggregate first.");
         var state = await JsonUtil.ReadAsync<StateSnapshot>(_fs.StatePath, ct)
                     ?? new StateSnapshot { Version = "0.1", GeneratedAt = DateTimeOffset.MinValue };
 

@@ -16,6 +16,7 @@ public sealed class FileSystemLayout
     public string PromptsDir => Path.Combine(Root, "prompts");
     public string EntriesDir => Path.Combine(Root, "cheatsheets", "entries");
     public string OutputDir => Path.Combine(Root, "output");
+    public string ConfigPath => Path.Combine(Root, "config.json");
     public string PatternsPath => Path.Combine(Root, "patterns.json");
     public string StatePath => Path.Combine(Root, "state.json");
     public string RegenPlanPath => Path.Combine(Root, "data", "regen_plan.json");
