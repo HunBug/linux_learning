@@ -1,0 +1,16 @@
+{
+  "commandFilters": [
+    "^run\\.sh$",
+    "^debug\\.sh$",
+    "^start-local\\.sh$",
+    "^docker_build\\.sh$",
+    "^update-pieeprom\\.sh$",
+    ".*\\.sock$",
+    "^--.*$",
+    "^-.*$",
+    "^[A-Za-z]+:$",
+    "^{[^}]*:$",
+    "^[\\[\\]{}(),\\\\|]+$",
+    "^#"
+  ]
+}
